@@ -66,9 +66,9 @@ tui_status_t tui_menu_start(tui_entry_menu_t *menu){
 			gfx_printf("%s\n", title);
 		}
 
-		u8 btn = btn_wait_timeout_single1(1000);
+		u8 btn = btn_wait_timeout_single(1000, BTN_POWER | BTN_VOL_DOWN | BTN_VOL_UP);
 
-		if(btn & BTN_VOL_UP){
+        if(btn & BTN_VOL_UP){
 			tui_entry_t *next_selected = selected;
 			for(tui_entry_t *current = menu->entries; current != selected; current = current->next){
 				if(tui_entry_is_selectable(current)){

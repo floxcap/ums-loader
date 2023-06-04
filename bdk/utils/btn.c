@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018 naehrwert
- * Copyright (c) 2018 CTCaer
+ * Copyright (c) 2018-2022 CTCaer
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -18,8 +18,8 @@
 #include "btn.h"
 #include <soc/i2c.h>
 #include <soc/gpio.h>
+#include <soc/timer.h>
 #include <soc/t210.h>
-#include <utils/util.h>
 #include <power/max77620.h>
 
 u8 btn_read()
@@ -29,6 +29,7 @@ u8 btn_read()
 		res |= BTN_VOL_DOWN;
 	if (!gpio_read(GPIO_PORT_X, GPIO_PIN_6))
 		res |= BTN_VOL_UP;
+	// HOAG can use the GPIO. Icosa/Iowa/AULA cannot. Traces are there but they miss a resistor.
 	if (i2c_recv_byte(I2C_5, MAX77620_I2C_ADDR, MAX77620_REG_ONOFFSTAT) & MAX77620_ONOFFSTAT_EN0)
 		res |= BTN_POWER;
 	return res;
@@ -42,6 +43,11 @@ u8 btn_read_vol()
 	if (!gpio_read(GPIO_PORT_X, GPIO_PIN_6))
 		res |= BTN_VOL_UP;
 	return res;
+}
+
+u8 btn_read_home()
+{
+	return (!gpio_read(GPIO_PORT_Y, GPIO_PIN_1)) ? BTN_HOME : 0;
 }
 
 u8 btn_wait()
@@ -83,31 +89,6 @@ u8 btn_wait_timeout(u32 time_ms, u8 mask)
 	};
 
 	return res;
-}
-
-static bool btn_is_single(u8 btn){
-	if(btn == BTN_VOL_DOWN ||
-	   btn == BTN_VOL_UP   ||
-	   btn == BTN_POWER){
-		return(true);
-	}
-	return(false);
-}
-
-u8 btn_wait_timeout_single1(u32 time_ms){
-	u8 btn_prev = btn_read();
-	u8 btn;
-	u32 timeout = get_tmr_ms() + time_ms;
-	while(get_tmr_ms() < timeout){
-		btn = btn_read();
-		if(btn_is_single(btn)){
-			if(!(btn & btn_prev)){
-				return(btn);
-			}
-		}
-		btn_prev = btn;
-	}
-	return(0);
 }
 
 u8 btn_wait_timeout_single(u32 time_ms, u8 mask)

@@ -1,7 +1,9 @@
+#include <string.h>
+#include <stdlib.h>
 #include <gfx.h>
 #include <mem/mc.h>
 #include <soc/hw_init.h>
-#include <storage/nx_sd.h>
+#include <storage/sd.h>
 #include <mem/heap.h>
 #include <memory_map.h>
 #include <storage/sdmmc.h>
@@ -14,6 +16,8 @@
 #include <display/di.h>
 #include <gfx_utils.h>
 #include <tui.h>
+#include <soc/bpmp.h>
+#include <soc/t210.h>
 
 // Offset: 0x94
 // +-----+---------+------------------------------------+
@@ -50,6 +54,20 @@
 // |     |         | 1: Mount SD EMMC-BOOT1 read-only   |
 // |     |         | 2: Mount SD EMMC-BOOT1 read/write  |
 // +-----+---------+------------------------------------+
+
+// This is a safe and unused DRAM region for our payloads.
+#define RELOC_META_OFF      0x7C
+#define PATCHED_RELOC_SZ    0x94
+#define PATCHED_RELOC_STACK 0x40007000
+#define PATCHED_RELOC_ENTRY 0x40010000
+#define EXT_PAYLOAD_ADDR    0xC0000000
+#define RCM_PAYLOAD_ADDR    (EXT_PAYLOAD_ADDR + ALIGN(PATCHED_RELOC_SZ, 0x10))
+#define COREBOOT_END_ADDR   0xD0000000
+#define CBFS_DRAM_EN_ADDR   0x4003E000
+#define  CBFS_DRAM_MAGIC    0x4452414D // "DRAM"
+#define COREBOOT_VER_OFF    0x41
+
+static void *coreboot_addr;
 
 #define MEMLOADER_NO_MOUNT              0
 #define MEMLOADER_RO                    1
@@ -109,10 +127,20 @@ static const char *toggle_menu_strings[][3] = {
 		[MEMLOADER_EMMC_GPP]   = {"   GPP - ", "   GPP RO", "   GPP RW"},
 		[MEMLOADER_SD]         = {"    SD - ", "    SD RO", "    SD RW"}
 	};
-	
+
 extern void pivot_stack(u32 stack_top);
 
-void system_maintenance(bool refresh){
+// STUB
+void minerva_change_freq(minerva_freq_t freq) {
+
+}
+
+// STUB
+void sdram_init() {
+
+}
+
+void system_maintenance(bool refresh) {
 
 }
 
@@ -147,98 +175,98 @@ void ums_cfg_menu_toggle_cb(void *data){
 
 
 void ums_start(ums_loader_ums_cfg_t *config){
-	gfx_clear_color(0x0);
-	gfx_con_setpos(0, 0);
-	gfx_con_setcol(TUI_COL_FG, 1, TUI_COL_BG);
+    gfx_clear_color(0x0);
+    gfx_con_setpos(0, 0);
+    gfx_con_setcol(TUI_COL_FG, 1, TUI_COL_BG);
 
-	gfx_printf("Running UMS\n\n");
-	gfx_con_setcol(TUI_COL_DISABLED_FG, true, TUI_COL_DISABLED_BG);
-	gfx_printf("Volume Mount\n");
+    gfx_printf("Running UMS\n\n");
+    gfx_con_setcol(TUI_COL_DISABLED_FG, true, TUI_COL_DISABLED_BG);
+    gfx_printf("Volume Mount\n");
 
-	for(u32 i = MEMLOADER_SD; i <= MEMLOADER_EMMC_BOOT1; i++){
-		gfx_printf("%s\n", toggle_menu_strings[i][config->mount_modes[i]]);
-	}
+    for(u32 i = MEMLOADER_SD; i <= MEMLOADER_EMMC_BOOT1; i++){
+        gfx_printf("%s\n", toggle_menu_strings[i][config->mount_modes[i]]);
+    }
 
-	gfx_con_setcol(TUI_COL_FG, 1, TUI_COL_BG);
+    gfx_con_setcol(TUI_COL_FG, 1, TUI_COL_BG);
 
-	gfx_printf("\nTo stop, hold\n VOL+ and VOL-, or\n eject all volumes\n safely.\n\nStatus:\n");
+    gfx_printf("\nTo stop, hold\n VOL+ and VOL-, or\n eject all volumes\n safely.\n\nStatus:\n");
 
-	usb_ctxt_vol_t volumes[4];
-	u32 volumes_cnt = 0;
+    usb_ctxt_vol_t volumes[4];
+    u32 volumes_cnt = 0;
 
-	if(config->mount_mode_sd != MEMLOADER_NO_MOUNT){
-		if(!(config->storage_state & MEMLOADER_ERROR_SD)){
-			volumes[volumes_cnt].offset = 0;
-			volumes[volumes_cnt].partition = 0;
-			volumes[volumes_cnt].sectors = 0;
-			volumes[volumes_cnt].type = MMC_SD;
-			volumes[volumes_cnt].ro = config->mount_mode_sd == MEMLOADER_RO;
+    if(config->mount_mode_sd != MEMLOADER_NO_MOUNT){
+        if(!(config->storage_state & MEMLOADER_ERROR_SD)){
+            volumes[volumes_cnt].offset = 0;
+            volumes[volumes_cnt].partition = 0;
+            volumes[volumes_cnt].sectors = 0;
+            volumes[volumes_cnt].type = MMC_SD;
+            volumes[volumes_cnt].ro = config->mount_mode_sd == MEMLOADER_RO;
 
-			volumes_cnt++;
+            volumes_cnt++;
 
-		}
-	}
+        }
+    }
 
-	if(config->mount_mode_emmc_gpp != MEMLOADER_NO_MOUNT){
-		if(!(config->storage_state & MEMLOADER_ERROR_EMMC)){
-			volumes[volumes_cnt].offset = 0;
-			volumes[volumes_cnt].partition = EMMC_GPP + 1;
-			volumes[volumes_cnt].sectors = 0;
-			volumes[volumes_cnt].type = MMC_EMMC;
-			volumes[volumes_cnt].ro = config->mount_mode_emmc_gpp == MEMLOADER_RO;
+    if(config->mount_mode_emmc_gpp != MEMLOADER_NO_MOUNT){
+        if(!(config->storage_state & MEMLOADER_ERROR_EMMC)){
+            volumes[volumes_cnt].offset = 0;
+            volumes[volumes_cnt].partition = EMMC_GPP + 1;
+            volumes[volumes_cnt].sectors = 0;
+            volumes[volumes_cnt].type = MMC_EMMC;
+            volumes[volumes_cnt].ro = config->mount_mode_emmc_gpp == MEMLOADER_RO;
 
-			volumes_cnt++;
-		}
-	}
+            volumes_cnt++;
+        }
+    }
 
-	if(config->mount_mode_emmc_boot0 != MEMLOADER_NO_MOUNT){
-		if(!(config->storage_state & MEMLOADER_ERROR_EMMC)){
-			volumes[volumes_cnt].offset = 0;
-			volumes[volumes_cnt].partition = EMMC_BOOT0 + 1;
-			volumes[volumes_cnt].sectors = 0x2000;
-			volumes[volumes_cnt].type = MMC_EMMC;
-			volumes[volumes_cnt].ro = config->mount_mode_emmc_boot0 == MEMLOADER_RO;
+    if(config->mount_mode_emmc_boot0 != MEMLOADER_NO_MOUNT){
+        if(!(config->storage_state & MEMLOADER_ERROR_EMMC)){
+            volumes[volumes_cnt].offset = 0;
+            volumes[volumes_cnt].partition = EMMC_BOOT0 + 1;
+            volumes[volumes_cnt].sectors = 0x2000;
+            volumes[volumes_cnt].type = MMC_EMMC;
+            volumes[volumes_cnt].ro = config->mount_mode_emmc_boot0 == MEMLOADER_RO;
 
-			volumes_cnt++;
-		}
-	}
+            volumes_cnt++;
+        }
+    }
 
-	if(config->mount_mode_emmc_boot1 != MEMLOADER_NO_MOUNT){
-		if(!(config->storage_state & MEMLOADER_ERROR_EMMC)){
-			volumes[volumes_cnt].offset = 0;
-			volumes[volumes_cnt].partition = EMMC_BOOT1 + 1;
-			volumes[volumes_cnt].sectors = 0x2000;
-			volumes[volumes_cnt].type = MMC_EMMC;
-			volumes[volumes_cnt].ro = config->mount_mode_emmc_boot1 == MEMLOADER_RO;
+    if(config->mount_mode_emmc_boot1 != MEMLOADER_NO_MOUNT){
+        if(!(config->storage_state & MEMLOADER_ERROR_EMMC)){
+            volumes[volumes_cnt].offset = 0;
+            volumes[volumes_cnt].partition = EMMC_BOOT1 + 1;
+            volumes[volumes_cnt].sectors = 0x2000;
+            volumes[volumes_cnt].type = MMC_EMMC;
+            volumes[volumes_cnt].ro = config->mount_mode_emmc_boot1 == MEMLOADER_RO;
 
-			volumes_cnt++;
-		}
-	}
+            volumes_cnt++;
+        }
+    }
 
-	usb_ctxt_t usbs;
+    usb_ctxt_t usbs;
 
-	usbs.label = NULL;
-	usbs.set_text = &set_text;
-	usbs.system_maintenance = &system_maintenance;
-	usbs.volumes_cnt = volumes_cnt;
-	usbs.volumes = volumes;
+    usbs.label = NULL;
+    usbs.set_text = &set_text;
+    usbs.system_maintenance = &system_maintenance;
+    usbs.volumes_cnt = volumes_cnt;
+    usbs.volumes = volumes;
 
 
-	usb_device_gadget_ums(&usbs);
+    usb_device_gadget_ums(&usbs);
 
-	msleep(2000);
+    msleep(2000);
 
-	switch(config->stop_action){
-		case MEMLOADER_STOP_ACTION_OFF:
-			power_set_state(POWER_OFF);
-			break;
-		case MEMLOADER_STOP_ACTION_RCM:
-			power_set_state(REBOOT_RCM);
-			break;
-		case MEMLOADER_STOP_ACTION_MENU:
-		default:
-			break;
-	}
+    switch(config->stop_action){
+        case MEMLOADER_STOP_ACTION_OFF:
+            power_set_state(POWER_OFF);
+            break;
+        case MEMLOADER_STOP_ACTION_RCM:
+            power_set_state(REBOOT_RCM);
+            break;
+        case MEMLOADER_STOP_ACTION_MENU:
+        default:
+            break;
+    }
 }
 
 void ums_menu_cb(void *data){
@@ -247,6 +275,12 @@ void ums_menu_cb(void *data){
 
 void menu_power_off_cb(void *data){
 	power_set_state(POWER_OFF);
+}
+
+void menu_test1_cb(void *data) {
+}
+
+void menu_test2_cb(void *data) {
 }
 
 void menu_reboot_rcm_cb(void *data){
@@ -277,7 +311,8 @@ void main(){
 	sdmmc_storage_t storage_emmc;
 	sdmmc_t sdmmc_emmc;
 
-	if(!sdmmc_storage_init_mmc(&storage_emmc, &sdmmc_emmc, SDMMC_BUS_WIDTH_8, SDHCI_TIMING_MMC_HS400)){
+    int mmc_init_ret = sdmmc_storage_init_mmc(&storage_emmc, &sdmmc_emmc, SDMMC_BUS_WIDTH_8, SDHCI_TIMING_MMC_HS400);
+	if(mmc_init_ret <= 0) {
 		ums_cfg.storage_state |= MEMLOADER_ERROR_EMMC;
 	}
 	sdmmc_storage_end(&storage_emmc);
@@ -346,30 +381,89 @@ void main(){
 		},
 	};
 
-
 	tui_entry_t ums_menu_entries[] = {
-		[0] = TUI_ENTRY_TEXT("Volume Mount", &ums_menu_entries[1]),
-		[1] = TUI_ENTRY_ACTION_NO_BLANK(toggle_menu_strings[MEMLOADER_SD][ums_cfg.mount_modes[MEMLOADER_SD]], ums_cfg_menu_toggle_cb, &ums_toggle_cb_data[MEMLOADER_SD], ums_cfg.storage_state & MEMLOADER_ERROR_SD ? true : false, &ums_menu_entries[2]),
-		[2] = TUI_ENTRY_ACTION_NO_BLANK(toggle_menu_strings[MEMLOADER_EMMC_GPP][ums_cfg.mount_modes[MEMLOADER_EMMC_GPP]], ums_cfg_menu_toggle_cb, &ums_toggle_cb_data[MEMLOADER_EMMC_GPP], ums_cfg.storage_state & MEMLOADER_ERROR_EMMC ? true : false, &ums_menu_entries[3]),
-		[3] = TUI_ENTRY_ACTION_NO_BLANK(toggle_menu_strings[MEMLOADER_EMMC_BOOT0][ums_cfg.mount_modes[MEMLOADER_EMMC_BOOT0]], ums_cfg_menu_toggle_cb, &ums_toggle_cb_data[MEMLOADER_EMMC_BOOT0], ums_cfg.storage_state & MEMLOADER_ERROR_EMMC ? true : false, &ums_menu_entries[4]),
-		[4] = TUI_ENTRY_ACTION_NO_BLANK(toggle_menu_strings[MEMLOADER_EMMC_BOOT1][ums_cfg.mount_modes[MEMLOADER_EMMC_BOOT1]], ums_cfg_menu_toggle_cb, &ums_toggle_cb_data[MEMLOADER_EMMC_BOOT1], ums_cfg.storage_state & MEMLOADER_ERROR_EMMC ? true : false, &ums_menu_entries[5]),
-		[5] = TUI_ENTRY_TEXT("\n", &ums_menu_entries[6]),
-		[6] = TUI_ENTRY_ACTION("Start UMS", ums_menu_cb, &ums_cfg, false, &ums_menu_entries[7]),
-		[7] = TUI_ENTRY_TEXT("\n", &ums_menu_entries[8]),
-		[8] = TUI_ENTRY_ACTION("Reload", menu_reload_cb, NULL, false, &ums_menu_entries[9]),
-		[9] = TUI_ENTRY_ACTION("Reboot RCM", menu_reboot_rcm_cb, NULL, false, &ums_menu_entries[10]),
-		[10] = TUI_ENTRY_ACTION("Power Off", menu_power_off_cb, NULL, false, NULL),
+        [0] = TUI_ENTRY_TEXT("\n", &ums_menu_entries[1]),
+		[1] = TUI_ENTRY_TEXT("Volume Mount", &ums_menu_entries[2]),
+		[2] = TUI_ENTRY_ACTION_NO_BLANK(toggle_menu_strings[MEMLOADER_SD][ums_cfg.mount_modes[MEMLOADER_SD]], ums_cfg_menu_toggle_cb, &ums_toggle_cb_data[MEMLOADER_SD], ums_cfg.storage_state & MEMLOADER_ERROR_SD ? true : false, &ums_menu_entries[3]),
+		[3] = TUI_ENTRY_ACTION_NO_BLANK(toggle_menu_strings[MEMLOADER_EMMC_GPP][ums_cfg.mount_modes[MEMLOADER_EMMC_GPP]], ums_cfg_menu_toggle_cb, &ums_toggle_cb_data[MEMLOADER_EMMC_GPP], ums_cfg.storage_state & MEMLOADER_ERROR_EMMC ? true : false, &ums_menu_entries[4]),
+		[4] = TUI_ENTRY_ACTION_NO_BLANK(toggle_menu_strings[MEMLOADER_EMMC_BOOT0][ums_cfg.mount_modes[MEMLOADER_EMMC_BOOT0]], ums_cfg_menu_toggle_cb, &ums_toggle_cb_data[MEMLOADER_EMMC_BOOT0], ums_cfg.storage_state & MEMLOADER_ERROR_EMMC ? true : false, &ums_menu_entries[5]),
+		[5] = TUI_ENTRY_ACTION_NO_BLANK(toggle_menu_strings[MEMLOADER_EMMC_BOOT1][ums_cfg.mount_modes[MEMLOADER_EMMC_BOOT1]], ums_cfg_menu_toggle_cb, &ums_toggle_cb_data[MEMLOADER_EMMC_BOOT1], ums_cfg.storage_state & MEMLOADER_ERROR_EMMC ? true : false, &ums_menu_entries[6]),
+		[6] = TUI_ENTRY_TEXT("\n", &ums_menu_entries[7]),
+		[7] = TUI_ENTRY_ACTION("Start UMS", ums_menu_cb, &ums_cfg, false, &ums_menu_entries[8]),
+		[8] = TUI_ENTRY_TEXT("\n", &ums_menu_entries[9]),
+		[9] = TUI_ENTRY_ACTION("Reload", menu_reload_cb, NULL, false, &ums_menu_entries[10]),
+		[10] = TUI_ENTRY_ACTION("----", menu_test1_cb, NULL, false, &ums_menu_entries[11]),
+        [11] = TUI_ENTRY_ACTION("----", menu_test2_cb, &ums_menu_entries[0], false, &ums_menu_entries[12]),
+		[12] = TUI_ENTRY_ACTION("Power Off", menu_power_off_cb, NULL, false, NULL),
 	};
 
-
-	ums_toggle_cb_data[MEMLOADER_SD].entry = &ums_menu_entries[1];
-	ums_toggle_cb_data[MEMLOADER_EMMC_GPP].entry = &ums_menu_entries[2];
-	ums_toggle_cb_data[MEMLOADER_EMMC_BOOT0].entry = &ums_menu_entries[3];
-	ums_toggle_cb_data[MEMLOADER_EMMC_BOOT1].entry = &ums_menu_entries[4];
+	ums_toggle_cb_data[MEMLOADER_SD].entry = &ums_menu_entries[2];
+	ums_toggle_cb_data[MEMLOADER_EMMC_GPP].entry = &ums_menu_entries[3];
+	ums_toggle_cb_data[MEMLOADER_EMMC_BOOT0].entry = &ums_menu_entries[4];
+	ums_toggle_cb_data[MEMLOADER_EMMC_BOOT1].entry = &ums_menu_entries[5];
 
 	tui_entry_menu_t ums_menu;
 	ums_menu.title.text = "UMS";
 	ums_menu.entries = ums_menu_entries;
+
+    switch (mmc_init_ret) {
+        default:
+            ums_menu_entries[0].text.title.text = "MMC:ok\n";
+            break;
+
+        case 0:
+            ums_menu_entries[0].text.title.text = "MMC:err\n";
+            break;
+
+        case -1:
+            ums_menu_entries[0].text.title.text = "MMC:err init\n";
+            break;
+
+        case -2:
+            ums_menu_entries[0].text.title.text = "MMC:err idle\n";
+            break;
+
+        case -3:
+            ums_menu_entries[0].text.title.text = "MMC:err op\n";
+            break;
+
+        case -4:
+            ums_menu_entries[0].text.title.text = "MMC:err cid\n";
+            break;
+
+        case -5:
+            ums_menu_entries[0].text.title.text = "MMC:err addr\n";
+            break;
+
+        case -6:
+            ums_menu_entries[0].text.title.text = "MMC:err csd\n";
+            break;
+
+        case -7:
+            ums_menu_entries[0].text.title.text = "MMC:err clk\n";
+            break;
+
+        case -8:
+            ums_menu_entries[0].text.title.text = "MMC:err sel\n";
+            break;
+
+        case -9:
+            ums_menu_entries[0].text.title.text = "MMC:err len\n";
+            break;
+
+        case -10:
+            ums_menu_entries[0].text.title.text = "MMC:err bus\n";
+            break;
+
+        case -11:
+            ums_menu_entries[0].text.title.text = "MMC:err ext\n";
+            break;
+
+        case -12:
+            ums_menu_entries[0].text.title.text = "MMC:err spd\n";
+            break;
+    }
+    //touch_power_on();
 
 	tui_menu_start(&ums_menu);
 

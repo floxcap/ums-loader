@@ -27,7 +27,7 @@
 #include <gfx_utils.h>
 #include <soc/hw_init.h>
 #include <soc/t210.h>
-#include <storage/nx_sd.h>
+#include <storage/sd.h>
 #include <storage/sdmmc.h>
 #include <storage/sdmmc_driver.h>
 #include <utils/btn.h>
@@ -1931,7 +1931,7 @@ int usb_device_gadget_ums(usb_ctxt_t *usbs)
 				ums.set_text(ums.label, "Mounting MMC");
 
 				mmc_used = true;
-				if(!sdmmc_storage_init_mmc(&storage, &sdmmc, SDMMC_BUS_WIDTH_8, SDHCI_TIMING_MMC_HS400)){
+				if(!sdmmc_storage_init_mmc(&storage, &sdmmc, SDMMC_BUS_WIDTH_1, SDHCI_TIMING_MMC_HS400)){
 					ums.set_text(ums.label, "ERR: MMC init fail");
 					goto error;
 				}

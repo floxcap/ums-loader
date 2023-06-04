@@ -38,6 +38,11 @@
 
 #define DRAM_START                0x80000000
 
+// Nyx buffers.
+#define NYX_STORAGE_ADDR 0xED000000
+#define NYX_RES_ADDR     0xEE000000
+#define  NYX_RES_SZ          SZ_16M
+
 #define SDMMC_UPPER_BUFFER        USB_EP_BULK_IN_BUF_ADDR
 #define SDMMC_UP_BUF_SZ           USB_EP_BULK_OUT_MAX_XFER
 
@@ -50,7 +55,7 @@
 
 // #define SECMON_MIN_START  0x4002B000
 
-// #define SDRAM_PARAMS_ADDR 0x40030000 // SDRAM extraction buffer during sdram init.
+#define SDRAM_PARAMS_ADDR 0x40030000 // SDRAM extraction buffer during sdram init.
 // #define CBFS_DRAM_EN_ADDR 0x4003e000 // u32.
 
 // /* --- DRAM START --- */

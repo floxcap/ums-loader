@@ -16,7 +16,7 @@
  */
 
 // #include <libs/fatfs/ff.h>
-#include <storage/nx_sd.h>
+#include <storage/sd.h>
 #include <storage/sdmmc.h>
 #include <storage/sdmmc_driver.h>
 #include <gfx_utils.h>
